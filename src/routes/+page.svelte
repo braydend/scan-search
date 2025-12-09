@@ -3,13 +3,22 @@
 
   let query = $state("");
   let greetMsg = $state("");
+  let isReady = $state(false);
 
   $effect(() => {
+    invoke("is_ready").then((res) => {
+      console.debug({res});
+      isReady = Boolean(res);
+    });
+
+    if (!isReady) {
+      greetMsg = "Database is indexing, please wait...";
+    }
+    if (query.length === 0) {
+      greetMsg = "Search for something...";
+      return;
+    }
       invoke("search", { query }).then((res) => {
-        if (query.length === 0) {
-          greetMsg = "Search for something...";
-          return;
-        }
         if (typeof res === "string") {
           greetMsg = res;
         }
