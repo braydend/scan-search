@@ -17,7 +17,7 @@
   });
 </script>
 
-<main class="container">
+<main data-tauri-drag-region class="container">
   <h1>S<span class="underline">can&nbsp;&nbsp;</span></h1>
 
   <form class="row">
