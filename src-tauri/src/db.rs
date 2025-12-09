@@ -1,23 +1,33 @@
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use rusqlite::{params, Connection, Result, LoadExtensionGuard};
-use crate::FileItem;
+use crate::fs_crawler::FileItem;
 
 pub fn seed_database(conn: Arc<Mutex<Connection>>, files: Vec<FileItem>) {
         let mut model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
         ).unwrap();
-        let filenames = &files.iter().filter_map(|item| item.path.parse().ok()).collect::<Vec<String>>();
+        let filenames = &files.iter().filter_map(|item| Option::from(item.label.clone())).collect::<Vec<String>>();
         let embeddings = model.embed(filenames, None);
 
-        let conn = conn.lock().expect("Failed to get lock for db");
-        for (embedding, file) in embeddings.unwrap().iter().zip(files.iter()) {
-            let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_ne_bytes()).collect();
-            conn.execute(
-                "INSERT INTO items (embedding, label, path) VALUES (?1, ?2, ?3)",
-                params![embedding_bytes, file.label, file.path],
-            ).expect("failed to insert item in db");
+        let mut conn = conn.lock().expect("Failed to get lock for db");
+        let tx = conn.transaction().expect("Failed to start transaction");
+        {
+            let mut stmt = tx
+                .prepare("INSERT INTO items (embedding, label, path) VALUES (?1, ?2, ?3)")
+                .expect("Failed to prepare insert statement");
+
+            for (embedding, file) in embeddings.unwrap().iter().zip(files.iter()) {
+                println!("Adding embeddings for {} to transaction", file.label);
+                let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_ne_bytes()).collect();
+                stmt
+                    .execute(params![embedding_bytes, file.label, file.path])
+                    .expect("failed to insert item in db");
+            }
         }
+    println!("Commiting transaction");
+        tx.commit().expect("Failed to commit transaction");
     }
 
     #[derive(Debug)]

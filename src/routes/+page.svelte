@@ -3,25 +3,27 @@
 
   let query = $state("");
   let greetMsg = $state("");
-  let isReady = $state(false);
+
+  type SearchResponse = {
+    data: string,
+    success: boolean,
+  }
+
+  const isSearchResponse = (input: any): input is SearchResponse => {
+    return typeof input === 'object' && input !== null && Object.hasOwn(input, 'success') && Object.hasOwn(input, 'data')
+  };
 
   $effect(() => {
-    invoke("is_ready").then((res) => {
-      console.debug({res});
-      isReady = Boolean(res);
-    });
-
-    if (!isReady) {
-      greetMsg = "Database is indexing, please wait...";
-    }
     if (query.length === 0) {
       greetMsg = "Search for something...";
       return;
     }
       invoke("search", { query }).then((res) => {
-        if (typeof res === "string") {
-          greetMsg = res;
+        if (isSearchResponse(res)) {
+          greetMsg = res.data;
+          return;
         }
+        greetMsg = "Something went wrong"
       });
   });
 </script>
@@ -43,7 +45,6 @@
   font-weight: 400;
 
   color: #0f0f0f;
-  /*background-color: #f6f6f6;*/
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
