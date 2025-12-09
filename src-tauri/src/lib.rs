@@ -1,4 +1,5 @@
 mod db;
+mod timer;
 
 use std::time::SystemTime;
 use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
@@ -62,7 +63,7 @@ fn is_ready(state: State<AppState>) -> bool {
 
 #[tauri::command]
 fn search(state: State<AppState>, query: String) -> String {
-    let result = timer("Search completed", || {
+    let result = timer::timer("Search completed", || {
         let inputs: Vec<&str> = vec![&query];
         let embeddings = state.model.lock().expect("Failed to get lock for model").embed(&inputs, None);
 
@@ -103,15 +104,6 @@ fn search(state: State<AppState>, query: String) -> String {
     //     format!("{}", found.map_or("Not found".to_string(), |_| format!("Found: {:?}!", found)))
 }
 
-fn timer<T>(label: &str, func: impl FnOnce()->T) -> Result<T>{
-    let start = SystemTime::now();
-    let result = func();
-    let end = SystemTime::now();
-    let duration = end.duration_since(start).unwrap();
-    println!("{} complete in ({:?})", label, duration);
-    Ok(result)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut ready = false;
@@ -119,10 +111,10 @@ pub fn run() {
     let db_mutex = Arc::new(Mutex::new(conn));
     let conn_mutex = Arc::clone(&db_mutex);
     let app_db_mutex = Arc::clone(&db_mutex);
-    timer("init database", || db::init_database(db_mutex));
+    timer::timer("init database", || db::init_database(db_mutex));
     // TODO: split out db seeding and do it async
         thread::spawn(move || {
-            timer("db seeding", || {
+            timer::timer("db seeding", || {
                 let files = list_src_files().unwrap();
                 db::seed_database(conn_mutex, files);
                 ready = true;
