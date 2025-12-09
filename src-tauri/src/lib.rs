@@ -1,5 +1,6 @@
 mod db;
 mod timer;
+mod fs_crawler;
 
 use std::time::SystemTime;
 use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
@@ -17,42 +18,6 @@ struct AppState {
     ready: bool
 }
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-
-#[derive(Debug, Serialize, Clone)]
-struct FileItem {
-    label: String,
-    path: String,
-}
-
-fn collect_files_recursive(root: &Path, rel_base: &Path, out: &mut Vec<FileItem>) -> std::io::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            println!("Collecting files from {:?}", path);
-            collect_files_recursive(&path, rel_base, out)?;
-        } else if path.is_file() {
-            let label = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            let relative = path.strip_prefix(rel_base).unwrap_or(&path);
-            let rel_str = relative.to_string_lossy().into_owned();
-            out.push(FileItem { label, path: rel_str });
-        }
-    }
-    Ok(())
-}
-
-fn list_src_files() -> std::result::Result<Vec<FileItem>, String> {
-    // The Rust (Tauri) binary runs with CWD at src-tauri by default during dev,
-    // so the frontend source directory is one level up in "../src".
-    let src_dir = PathBuf::from(".");
-    if !src_dir.exists() {
-        return Err(format!("src directory not found at {:?}", src_dir));
-    }
-    let mut items = Vec::new();
-    collect_files_recursive(&src_dir, &src_dir, &mut items)
-        .map_err(|e| e.to_string())?;
-    Ok(items)
-}
 
 #[tauri::command]
 fn is_ready(state: State<AppState>) -> bool {
@@ -84,7 +49,7 @@ fn search(state: State<AppState>, query: String) -> String {
 
         let embedding_bytes: Vec<u8> = embeddings.unwrap()[0].iter().flat_map(|f| f.to_ne_bytes()).collect();
 
-       conn_guard.query_row(
+       return conn_guard.query_row(
             "SELECT e.id, v.distance, e.label, e.path FROM items AS e
                   JOIN vector_quantize_scan('items', 'embedding', ?1, 20) AS v
                   ON e.id = v.rowid;",
@@ -113,13 +78,11 @@ pub fn run() {
     let app_db_mutex = Arc::clone(&db_mutex);
     timer::timer("init database", || db::init_database(db_mutex));
     // TODO: split out db seeding and do it async
-        thread::spawn(move || {
             timer::timer("db seeding", || {
-                let files = list_src_files().unwrap();
+                let files = fs_crawler::list_src_files().unwrap();
                 db::seed_database(conn_mutex, files);
                 ready = true;
             }).unwrap();
-        });
     // Allow frontend to display during indexing and give progress report?
     let model = TextEmbedding::try_new(
         InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),

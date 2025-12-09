@@ -1,13 +1,14 @@
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use rusqlite::{params, Connection, Result, LoadExtensionGuard};
-use crate::FileItem;
+use crate::fs_crawler::FileItem;
 
 pub fn seed_database(conn: Arc<Mutex<Connection>>, files: Vec<FileItem>) {
         let mut model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
         ).unwrap();
-        let filenames = &files.iter().filter_map(|item| item.path.parse().ok()).collect::<Vec<String>>();
+        let filenames = &files.iter().filter_map(|item| Option::from(item.label.clone())).collect::<Vec<String>>();
         let embeddings = model.embed(filenames, None);
 
         let conn = conn.lock().expect("Failed to get lock for db");
