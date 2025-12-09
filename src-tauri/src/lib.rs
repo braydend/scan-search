@@ -1,3 +1,5 @@
+mod db;
+
 use std::time::SystemTime;
 use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
 use rusqlite::{params, Connection, Result, LoadExtensionGuard};
@@ -14,67 +16,6 @@ struct AppState {
     ready: bool
 }
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-
-fn seed_database(conn: Arc<Mutex<Connection>>, files: Vec<FileItem>) {
-    let mut model = TextEmbedding::try_new(
-        InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
-    ).unwrap();
-    let filenames = &files.iter().filter_map(|item| item.path.parse().ok()).collect::<Vec<String>>();
-    let embeddings = model.embed(filenames, None);
-
-    let mut conn = conn.lock().expect("Failed to get lock for db");
-    for (embedding, file) in embeddings.unwrap().iter().zip(files.iter()) {
-        let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_ne_bytes()).collect();
-        conn.execute(
-            "INSERT INTO items (embedding, label, path) VALUES (?1, ?2, ?3)",
-            params![embedding_bytes, file.label, file.path],
-        );
-    }
-}
-
-fn get_db_connection()-> Result<Connection> {
-    let conn = Connection::open("../sqlite/local.db").expect("Failed to open local.db");
-    // let conn = Connection::open_in_memory().expect("Failed to open local.db");
-
-    {
-        let _guard = unsafe { LoadExtensionGuard::new(&conn)? };
-        // MacOS ARM:
-        // unsafe { conn.load_extension("../sqlite/extensions/macos-arm-vector", None::<&str>).expect("Failed to load vector extension"); }
-        // Linux:
-        // Explicitly specify the entry point exported by the vector extension to avoid
-        // platform-dependent symbol name inference issues.
-        unsafe {
-            conn
-                .load_extension(
-                    "../sqlite/extensions/linux-x86-vector",
-                    Some("sqlite3_vector_init"),
-                )
-                .expect("Failed to load vector extension");
-        }
-    }
-
-    Ok(conn)
-}
-
-fn init_database(conn_mutex: Arc<Mutex<Connection>>) {
-//         let values: Vec<&str> = vec!["bray", "is", "learning", "tauri"];
-    let mut conn = conn_mutex.lock().expect("Failed to get lock for db");
-
-    conn.execute(
-        "DROP TABLE IF  EXISTS items;",
-        [],
-    ).expect("Failed to remove existing table");
-
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS items (
-             id INTEGER PRIMARY KEY,
-             embedding BLOB,
-             label TEXT,
-             path TEXT
-         );",
-        [],
-    ).expect("Failed to create table");
-}
 
 #[derive(Debug, Serialize, Clone)]
 struct FileItem {
@@ -102,7 +43,7 @@ fn collect_files_recursive(root: &Path, rel_base: &Path, out: &mut Vec<FileItem>
 fn list_src_files() -> std::result::Result<Vec<FileItem>, String> {
     // The Rust (Tauri) binary runs with CWD at src-tauri by default during dev,
     // so the frontend source directory is one level up in "../src".
-    let src_dir = PathBuf::from("../../ascension/src");
+    let src_dir = PathBuf::from(".");
     if !src_dir.exists() {
         return Err(format!("src directory not found at {:?}", src_dir));
     }
@@ -121,52 +62,45 @@ fn is_ready(state: State<AppState>) -> bool {
 
 #[tauri::command]
 fn search(state: State<AppState>, query: String) -> String {
-//     let values: Vec<&str> = vec!["bray", "is", "learning", "tauri"];
-//     let found = values.iter().find(|value| value.contains(&query));
-//     let mut model = TextEmbedding::try_new(Default::default()).unwrap();
-    let start = SystemTime::now();
-    let inputs: Vec<&str> = vec![&query];
-    let embeddings = state.model.lock().expect("Failed to get lock for model").embed(&inputs, None);
+    let result = timer("Search completed", || {
+        let inputs: Vec<&str> = vec![&query];
+        let embeddings = state.model.lock().expect("Failed to get lock for model").embed(&inputs, None);
 
-//         let conn = Connection::open("../sqlite/local.db").expect("Failed to open local.db");
-    let conn_guard = state.conn.lock().expect("failed to lock db");
-    conn_guard.query_row(
-                    "SELECT vector_init('items', 'embedding', 'type=FLOAT32,dimension=384');",
-                    [],
-                        |_row| Ok(())
-                ).expect("Failed to initialise vector");
+        //         let conn = Connection::open("../sqlite/local.db").expect("Failed to open local.db");
+        let conn_guard = state.conn.lock().expect("failed to lock db");
+        conn_guard.query_row(
+            "SELECT vector_init('items', 'embedding', 'type=FLOAT32,dimension=384');",
+            [],
+            |_row| Ok(())
+        ).expect("Failed to initialise vector");
 
 
         conn_guard.query_row(
-                        "SELECT vector_quantize('items', 'embedding');",
-                        [],
-                            |_row| Ok(())
-                    ).expect("Failed to quantise vector");
+            "SELECT vector_quantize('items', 'embedding');",
+            [],
+            |_row| Ok(())
+        ).expect("Failed to quantise vector");
 
-let embedding_bytes: Vec<u8> = embeddings.unwrap()[0].iter().flat_map(|f| f.to_ne_bytes()).collect();
+        let embedding_bytes: Vec<u8> = embeddings.unwrap()[0].iter().flat_map(|f| f.to_ne_bytes()).collect();
 
-          let result = conn_guard.query_row(
-              "SELECT e.id, v.distance, e.label, e.path FROM items AS e
+       conn_guard.query_row(
+            "SELECT e.id, v.distance, e.label, e.path FROM items AS e
                   JOIN vector_quantize_scan('items', 'embedding', ?1, 20) AS v
                   ON e.id = v.rowid;",
-              (embedding_bytes,),
-              |row| {
-                  let id: i64 = row.get(0)?;
-                  let distance: f64 = row.get(1)?;
-                  let label: String = row.get(2)?;
-                  let path: String = row.get(3)?;
-                  Ok((id, distance, label, path))
-              }
-          ).expect("Failed to run nearest neighbor search");
-
-    let end = SystemTime::now();
-    let duration = end.duration_since(start).unwrap();
-
-    println!("search complete for: {} ({:?}ms)", query, duration);
+            (embedding_bytes,),
+            |row| {
+                let id: i64 = row.get(0)?;
+                let distance: f64 = row.get(1)?;
+                let label: String = row.get(2)?;
+                let path: String = row.get(3)?;
+                Ok((id, distance, label, path))
+            }
+        ).expect("Failed to run nearest neighbor search");
+    });
 
 
-    format!("{:?}", result)
-//     format!("{}", found.map_or("Not found".to_string(), |_| format!("Found: {:?}!", found)))
+          format!("{:?}", result)
+    //     format!("{}", found.map_or("Not found".to_string(), |_| format!("Found: {:?}!", found)))
 }
 
 fn timer<T>(label: &str, func: impl FnOnce()->T) -> Result<T>{
@@ -181,16 +115,16 @@ fn timer<T>(label: &str, func: impl FnOnce()->T) -> Result<T>{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut ready = false;
-    let conn = get_db_connection().unwrap();
+    let conn = db::get_db_connection().unwrap();
     let db_mutex = Arc::new(Mutex::new(conn));
     let conn_mutex = Arc::clone(&db_mutex);
     let app_db_mutex = Arc::clone(&db_mutex);
-    timer("init database", || init_database(db_mutex));
+    timer("init database", || db::init_database(db_mutex));
     // TODO: split out db seeding and do it async
         thread::spawn(move || {
             timer("db seeding", || {
                 let files = list_src_files().unwrap();
-                seed_database(conn_mutex, files);
+                db::seed_database(conn_mutex, files);
                 ready = true;
             }).unwrap();
         });
