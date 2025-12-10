@@ -6,22 +6,44 @@
   let results = $state<SearchResult[]>([]);
 
   type SearchResult = {
+    id: number,
+    distance: number,
     label: string,
     path: string,
   }
 
-  type SerialisedSearchResponse = {
-    data: string,
-    success: boolean,
+  type SerialisedFailedResponse = {
+    success: false,
+    message: string,
   }
 
-  type SearchResponse = {
-    data: SearchResult[],
-    success: boolean,
+  type SerialisedSuccessResponse = {
+    success: true,
+    data: string,
   }
+
+  type SerialisedSearchResponse = SerialisedFailedResponse | SerialisedSuccessResponse;
+
+  type SearchFailedResponse = {
+    success: false,
+    message: string,
+  }
+
+  type SearchSuccessResponse = {
+    success: true,
+    data: SearchResult[],
+  }
+
+  type SearchResponse = SearchFailedResponse | SearchSuccessResponse;
 
   const isSearchResponse = (response: any): response is SerialisedSearchResponse => {
-    return Object.hasOwn(response, 'success') && Object.hasOwn(response, 'data') && Array.isArray(JSON.parse(response.data));
+    const hasSuccessKey = Object.hasOwn(response, 'success');
+    const hasDataKey = Object.hasOwn(response, 'data');
+    const dataIsArray = Array.isArray(JSON.parse(response.data));
+    const hasMessageKey = Object.hasOwn(response, 'message');
+    const hasRequiredKeys = hasSuccessKey;
+    const hasOptionalKeys = (hasDataKey && dataIsArray) || hasMessageKey;
+    return hasRequiredKeys && hasOptionalKeys;
   };
 
   const deserialiseResponse = (response: any): SearchResponse|null => {
@@ -30,10 +52,16 @@
       return null;
     }
 
+    if (!response.success) {
+      return {
+        ...response,
+      } satisfies SearchFailedResponse
+    }
+
     return {
       ...response,
-      data: JSON.parse(response.data).map((result: any) => ({ label: result.label, path: result.path }))
-    }
+      data: JSON.parse(response.data)
+    } satisfies SearchSuccessResponse
   }
 
   $effect(() => {
@@ -46,6 +74,11 @@
 
         if (!response) {
           message = "Something went wrong"
+          return;
+        }
+
+        if (!response.success) {
+          message = response.message;
           return;
         }
 
@@ -70,7 +103,7 @@
   {#if (results.length > 0)}
     <ul>
       {#each results as result (result.label)}
-        <li>{result.label} ({result.path})</li>
+        <li>{result.label} ({result.path}) - ({result.distance})</li>
         {:else}
         <li>No results found</li>
         {/each}

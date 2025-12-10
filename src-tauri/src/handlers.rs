@@ -3,8 +3,9 @@ use crate::{timer, AppState};
 
 #[derive(serde::Serialize)]
 pub struct SearchResponse {
-    data: String,
+    data: Option<String>,
     success: bool,
+    message: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -24,8 +25,9 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
         Err(_) => {
             println!("DB busy: returning non-blocking error response");
             return SearchResponse {
-                data: "Database is not ready".to_string(),
+                data: None,
                 success: false,
+                message: Some("Database is still seeding".to_string())
             };
         }
     };
@@ -36,8 +38,9 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
         Err(_) => {
             println!("Model busy: returning non-blocking error response");
             return SearchResponse {
-                data: "Model is not ready".to_string(),
+                data: None,
                 success: false,
+                message: Some("Model is still loading".to_string())
             };
         }
     };
@@ -52,8 +55,9 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
 
     if !has_records {
         return SearchResponse {
-            data: "Database is still seeding".to_string(),
+            data: None,
             success: false,
+            message: Some("Database is still seeding".to_string()),
         }
     }
 
@@ -84,7 +88,6 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
             "SELECT e.id, v.distance, e.label, e.path FROM items AS e
                   JOIN vector_quantize_scan('items', 'embedding', ?1, 20) AS v
                   ON e.id = v.rowid
-                  ORDER BY v.distance DESC
                   limit 30;"
         ).unwrap();
 
@@ -102,15 +105,17 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
     match result {
         Ok(rows) => {
             SearchResponse {
-                data: serde_json::to_string(&rows).unwrap(),
+                data: Some(serde_json::to_string(&rows).unwrap()),
                 success: true,
+                message: None,
             }
         },
         Err(e) => {
             println!("Search error: {}", e);
             SearchResponse {
-                data: "Search error".to_string(),
+                data: None,
                 success: false,
+                message: Some("Search error".to_string()),
             }
         }
     }
