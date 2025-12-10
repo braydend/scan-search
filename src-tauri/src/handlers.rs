@@ -1,4 +1,3 @@
-use rusqlite::{OptionalExtension, Row};
 use tauri::State;
 use crate::{timer, AppState};
 
@@ -81,31 +80,31 @@ pub fn search(state: State<AppState>, query: String) -> SearchResponse {
 
         let embedding_bytes: Vec<u8> = embeddings[0].iter().flat_map(|f| f.to_ne_bytes()).collect();
 
-        let result = conn_guard.query_row(
+        let mut stmt = conn_guard.prepare(
             "SELECT e.id, v.distance, e.label, e.path FROM items AS e
                   JOIN vector_quantize_scan('items', 'embedding', ?1, 20) AS v
-                  ON e.id = v.rowid;",
-            (embedding_bytes,),
-            |row| {
+                  ON e.id = v.rowid
+                  ORDER BY v.distance DESC
+                  limit 30;"
+        ).unwrap();
+
+        let rows = stmt
+            .query_map(&[&embedding_bytes],|row| {
                 let id: i64 = row.get(0)?;
                 let distance: f64 = row.get(1)?;
                 let label: String = row.get(2)?;
                 let path: String = row.get(3)?;
                 Ok(ItemRow{id, distance, label, path})
-            }
-        ).optional().expect("Failed to run nearest neighbor search");
-
-        result
+            });
+        rows.unwrap().map(|row| row.unwrap()).collect::<Vec<ItemRow>>()
     });
 
     match result {
-        Ok(Some(item)) => SearchResponse {
-            data: serde_json::to_string(&item).unwrap(),
-            success: true,
-        },
-        Ok(None) => SearchResponse {
-            data: "No results".to_string(),
-            success: false,
+        Ok(rows) => {
+            SearchResponse {
+                data: serde_json::to_string(&rows).unwrap(),
+                success: true,
+            }
         },
         Err(e) => {
             println!("Search error: {}", e);

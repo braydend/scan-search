@@ -2,28 +2,60 @@
   import { invoke } from "@tauri-apps/api/core";
 
   let query = $state("");
-  let greetMsg = $state("");
+  let message = $state("");
+  let results = $state<SearchResult[]>([]);
 
-  type SearchResponse = {
+  type SearchResult = {
+    label: string,
+    path: string,
+  }
+
+  type SerialisedSearchResponse = {
     data: string,
     success: boolean,
   }
 
-  const isSearchResponse = (input: any): input is SearchResponse => {
-    return typeof input === 'object' && input !== null && Object.hasOwn(input, 'success') && Object.hasOwn(input, 'data')
+  type SearchResponse = {
+    data: SearchResult[],
+    success: boolean,
+  }
+
+  const isSearchResponse = (response: any): response is SerialisedSearchResponse => {
+    return Object.hasOwn(response, 'success') && Object.hasOwn(response, 'data') && Array.isArray(JSON.parse(response.data));
   };
+
+  const deserialiseResponse = (response: any): SearchResponse|null => {
+    if (!isSearchResponse(response)) {
+      console.debug("Invalid response from search endpoint", response);
+      return null;
+    }
+
+    return {
+      ...response,
+      data: JSON.parse(response.data).map((result: any) => ({ label: result.label, path: result.path }))
+    }
+  }
 
   $effect(() => {
     if (query.length === 0) {
-      greetMsg = "Search for something...";
+      message = "Search for something...";
       return;
     }
       invoke("search", { query }).then((res) => {
-        if (isSearchResponse(res)) {
-          greetMsg = res.data;
+        const response = deserialiseResponse(res);
+
+        if (!response) {
+          message = "Something went wrong"
           return;
         }
-        greetMsg = "Something went wrong"
+
+        if (response.data.length === 0) {
+          message = "No results found";
+          return;
+        }
+
+        message = `${response.data.length} results found!`;
+        results = response.data
       });
   });
 </script>
@@ -34,7 +66,16 @@
   <form class="row">
     <input id="greet-input" placeholder="Search for something..." bind:value={query} />
   </form>
-  <p>{greetMsg}</p>
+  <p>{message}</p>
+  {#if (results.length > 0)}
+    <ul>
+      {#each results as result (result.label)}
+        <li>{result.label} ({result.path})</li>
+        {:else}
+        <li>No results found</li>
+        {/each}
+    </ul>
+  {/if}
 </main>
 
 <style>

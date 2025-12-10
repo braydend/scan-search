@@ -1,6 +1,4 @@
-use std::fmt::format;
 use std::fs;
-use std::ops::Add;
 use std::path::{Path, PathBuf};
 use serde::Serialize;
 
@@ -26,17 +24,10 @@ fn collect_files_recursive(root: &Path, current_path: &Path) -> Vec<FileItem> {
             let mut nested = collect_files_recursive(root, path.as_path());
             items.append(&mut nested);
         } else if path.is_file() {
-            let file_name = path.file_name().unwrap();
-            let label = file_name.to_string_lossy().to_string();
+            let label = path.file_name().unwrap().to_string_lossy().to_string();
+            let path_string = path.as_path().to_string_lossy().to_string();
 
-            // Directory relative to the original root
-            let parent = path.parent();
-            let rel_dir = parent
-                .and_then(|p| p.strip_prefix(root).ok())
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| String::from(""));
-
-            items.push(FileItem { label, path: path.as_path().to_string_lossy().to_string() });
+            items.push(FileItem { label, path: path_string });
         }
     }
     return items
