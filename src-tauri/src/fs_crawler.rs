@@ -1,4 +1,6 @@
-use std::{fs, thread};
+use std::fmt::format;
+use std::fs;
+use std::ops::Add;
 use std::path::{Path, PathBuf};
 use serde::Serialize;
 
@@ -8,33 +10,42 @@ pub struct FileItem {
     pub path: String,
 }
 
-fn collect_files_recursive(root: &Path, rel_base: &Path) -> Vec<FileItem> {
+pub fn read_file(file: &FileItem) -> Result<String, std::io::Error> {
+    let path_to_file = file.path.clone();
+    let path = Path::new(path_to_file.as_str());
+    // will error if file is not UTF8
+    fs::read_to_string(path)
+}
+
+fn collect_files_recursive(root: &Path, current_path: &Path) -> Vec<FileItem> {
     let mut items: Vec<FileItem> = Vec::new();
-    for entry in fs::read_dir(root).expect("Failed to read dir") {
-        let entry = entry.expect("Failed to read entry");
-        let path = entry.path();
-        if path.is_dir() {
-            println!("Collecting files from {:?}", path);
-            let base = rel_base.join(path.file_name().unwrap());
-            let handler = thread::spawn(move || {
-                collect_files_recursive(&path, &*base)
-            });
-            items.append(&mut handler.join().unwrap());
+    for entry in fs::read_dir(current_path).expect("Failed to read dir") {
+            let entry = entry.expect("Failed to read entry");
+            let path = entry.path().clone();
+        if entry.path().is_dir() {
+            let mut nested = collect_files_recursive(root, path.as_path());
+            items.append(&mut nested);
         } else if path.is_file() {
-            let label = path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
-            println!("Collecting file {:?}", label);
-            let relative = path.strip_prefix(rel_base).unwrap_or(&path);
-            let rel_str = relative.to_string_lossy().into_owned();
-            items.append(&mut Vec::from([FileItem { label, path: rel_str }]));
+            let file_name = path.file_name().unwrap();
+            let label = file_name.to_string_lossy().to_string();
+
+            // Directory relative to the original root
+            let parent = path.parent();
+            let rel_dir = parent
+                .and_then(|p| p.strip_prefix(root).ok())
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| String::from(""));
+
+            items.push(FileItem { label, path: path.as_path().to_string_lossy().to_string() });
         }
     }
     return items
 }
 
-pub fn list_src_files() -> Result<Vec<FileItem>, String> {
+pub fn list_src_files(path: String) -> Result<Vec<FileItem>, String> {
     // The Rust (Tauri) binary runs with CWD at src-tauri by default during dev,
     // so the frontend source directory is one level up in "../src".
-    let src_dir = PathBuf::from(".");
+    let src_dir = PathBuf::from(path);
     if !src_dir.exists() {
         return Err(format!("src directory not found at {:?}", src_dir));
     }

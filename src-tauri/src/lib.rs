@@ -27,7 +27,7 @@ pub fn run() {
     thread::spawn(move || {
         let mut files = Vec::new();
         timer::timer("collecting files", || {
-            files.append(fs_crawler::list_src_files().unwrap().as_mut());
+            files.append(fs_crawler::list_src_files("../../ascension/docs".to_string()).unwrap().as_mut());
         }).expect("failed to collect files");
 
         timer::timer("adding files to db", || {
