@@ -7,17 +7,27 @@ use crate::fs_crawler::{read_file, FileItem};
 
 pub fn seed_database(conn: Arc<Mutex<Connection>>, files: Vec<FileItem>) {
         let mut model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::AllMiniLML6V2).with_show_download_progress(true),
+            InitOptions::new(EmbeddingModel::JinaEmbeddingsV2BaseCode).with_show_download_progress(true),
         ).unwrap();
+    println!("Model initialized -- starting to map files");
         let filenames = &files.iter().filter_map(|item| {
             match read_file(item) {
-                Ok(file_contents) => return Some(item.path.clone().add("\n\n").add(&file_contents)),
-                Err(_) => {return Some(item.path.clone())}
+                Ok(file_contents) => {
+                    println!("Read file: {}", item.path);
+                    return Some(item.path.clone().add("\n\n").add(&file_contents))
+                },
+                Err(_) => {
+                    println!("Failed to read file: {}", item.path);
+                    return Some(item.path.clone())
+                }
             }
             let file_data = read_file(item);
             Option::from(item.label.clone())
         }).collect::<Vec<String>>();
+    print!("Trying to embed files");
+
         let embeddings = model.embed(filenames, None);
+    print!("Embedded files");
 
         let mut conn = conn.lock().expect("Failed to get lock for db");
         let tx = conn.transaction().expect("Failed to start transaction");
