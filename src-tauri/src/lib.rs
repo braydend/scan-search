@@ -30,8 +30,8 @@ pub fn run() {
             files.append(fs_crawler::list_src_files("../../ascension/docs".to_string()).unwrap().as_mut());
         }).expect("failed to collect files");
 
-        timer::timer("adding files to db", || {
-            db::seed_database(conn_mutex, files);
+        timer::timer("indexing files in db", || {
+            db::index_files(conn_mutex, files);
         }).expect("failed to seed database");
 });
     // Allow frontend to display during indexing and give progress report?

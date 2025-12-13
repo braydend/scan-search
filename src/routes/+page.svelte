@@ -118,7 +118,7 @@
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
+  color: #ffffff;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;

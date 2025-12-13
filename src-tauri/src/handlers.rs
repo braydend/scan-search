@@ -9,7 +9,7 @@ pub struct SearchResponse {
 }
 
 #[derive(serde::Serialize)]
-struct ItemRow {
+pub struct ItemRow {
     id: i64,
     distance: f64,
     label: String,

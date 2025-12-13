@@ -1,6 +1,8 @@
 use std::fs;
+use std::ops::Add;
 use std::path::{Path, PathBuf};
 use serde::Serialize;
+use sha2::Digest;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct FileItem {
@@ -8,11 +10,26 @@ pub struct FileItem {
     pub path: String,
 }
 
-pub fn read_file(file: &FileItem) -> Result<String, std::io::Error> {
-    let path_to_file = file.path.clone();
-    let path = Path::new(path_to_file.as_str());
-    // will error if file is not UTF8
-    fs::read_to_string(path)
+impl FileItem {
+    pub fn read(self: &Self) -> String {
+        let path_to_file = self.path.clone();
+        let path = Path::new(path_to_file.as_str());
+        // will error if file is not UTF8
+        let file_contents = fs::read_to_string(path);
+        return match file_contents {
+            Ok(file_contents) => {
+                self.path.clone().add("\n\n").add(file_contents.as_str())
+            },
+            Err(_) => { self.path.clone() }
+        }
+    }
+    pub fn hash(self: &Self, hasher_base: impl Digest + Clone) -> String {
+        let file_contents = self.read();
+        let mut hasher = hasher_base.clone();
+        hasher.update(file_contents.clone());
+        let hash = hasher.finalize();
+        return hex::encode(hash);
+    }
 }
 
 fn collect_files_recursive(root: &Path, current_path: &Path) -> Vec<FileItem> {

@@ -4268,9 +4268,11 @@ name = "scan-search"
 version = "0.1.0"
 dependencies = [
  "fastembed",
+ "hex",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
