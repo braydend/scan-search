@@ -4,6 +4,7 @@
   let query = $state("");
   let message = $state("");
   let results = $state<SearchResult[]>([]);
+  let selectedResultIndex = $state<number>();
 
   type SearchResult = {
     id: number,
@@ -91,19 +92,59 @@
         results = response.data
       });
   });
+
+  const navigateToNextResult = () => {
+    console.debug("navigating to next", {from: selectedResultIndex})
+    selectedResultIndex = selectedResultIndex !== undefined ? selectedResultIndex+1 : 0;
+  };
+
+  const navigateToPreviousResult = () => {
+    console.debug("navigating to previous", {from: selectedResultIndex})
+    if (selectedResultIndex === undefined) {
+      return;
+    }
+    if (selectedResultIndex === 0) {
+      selectedResultIndex = undefined;
+      return;
+    }
+    selectedResultIndex = selectedResultIndex !== undefined ? selectedResultIndex-1 : 0;
+  };
+
+  const handleResultsNavigation = (event: KeyboardEvent) => {
+    const searchResultElements = document.getElementById("search-results")?.children;
+    console.debug({searchResultElements});
+    if (!searchResultElements) {
+      return;
+    }
+    switch (event.key) {
+      case "ArrowDown":
+        navigateToNextResult();
+        break;
+      case "ArrowUp":
+        navigateToPreviousResult();
+        break;
+      case "Enter":
+        console.debug("Launch file");
+        break;
+      case "Escape":
+        console.debug("resetting result selection")
+        selectedResultIndex = undefined;
+        break;
+    }
+  }
 </script>
 
 <main data-tauri-drag-region class="container">
   <h1>S<span class="underline">can&nbsp;&nbsp;</span></h1>
 
   <form class="row">
-    <input id="greet-input" placeholder="Search for something..." bind:value={query} />
+    <input id="greet-input" placeholder="Search for something..." bind:value={query} onkeyup={handleResultsNavigation} />
   </form>
   <p>{message}</p>
   {#if (results.length > 0)}
-    <ul>
-      {#each results as result (result.label)}
-        <li>{result.label} ({result.path}) - ({result.distance})</li>
+    <ul id="search-results">
+      {#each results as result, index (`${query}-${result.id}`)}
+        <li id={`result-${index}`} class={index === selectedResultIndex ? "selectedResult" : ""}>{result.label} ({result.path}) - ({result.distance})</li>
         {:else}
         <li>No results found</li>
         {/each}
@@ -138,6 +179,10 @@
   flex-direction: column;
   justify-content: center;
   text-align: center;
+}
+
+.selectedResult {
+  background-color: red;
 }
 
 .underline {
